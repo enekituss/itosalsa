@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Recuento Bus</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', monospace; margin: 0; background: #f9f9f9; }
+    .screen { max-width: 600px; margin: auto; padding: 20px; background: white; min-height: 100vh; box-sizing: border-box; }
+    input, button, textarea, select { width: 100%; margin-top: 10px; padding: 12px; font-size: 1em; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box; }
+    button { background-color: #007bff; color: white; border: none; cursor: pointer; }
+    button:hover { background-color: #0056b3; }
+    .parada { background: black; color: white; padding: 10px; margin: 10px 0; border-radius: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .small { font-size: 0.9em; opacity: 0.8; }
+    .pasajeros-container { background: #f1f1f1; margin-top: 5px; border-radius: 5px; padding: 10px; }
+    .pasajero { border: 1px solid #ccc; border-radius: 10px; padding: 10px; margin-bottom: 10px; background: white; position: relative; }
+    .destino { font-size: 1.2em; font-weight: bold; margin-bottom: 6px; text-align: center; }
+    .datos-arriba { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .datos-abajo { display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; }
+    .icono { width: 20px; height: 20px; }
+    .boton-embarcar { background-color: #ccc; border: none; border-radius: 10px; width: 50px; height: 50px; font-size: 1.5em; cursor: pointer; }
+    .boton-embarcar.embarcado { background-color: blue; color: white; }
+    .footer-buttons { display: flex; gap: 10px; margin-top: 20px; }
+    .hidden { display: none; }
+    .parada-config { display: flex; gap: 10px; margin-top: 5px; }
+    .parada-config input { flex: 2; }
+    .parada-config select { flex: 1; }
+  </style>
+</head>
+<body>
+
+<div class="screen" id="menuScreen">
+  <h2>Menú principal</h2>
+  <button onclick="continuarViaje()">Continuar viaje</button>
+  <button onclick="mostrarInicioViaje()">Iniciar viaje nuevo</button>
+</div>
+
+<div class="screen hidden" id="inicioViajeScreen">
+  <h2>Nuevo Viaje</h2>
+  <input type="text" id="numeroBus" placeholder="Número de bus">
+  <input type="number" id="plazas" placeholder="Número de plazas del autobús">
+  <div id="paradasContainer"></div>
+  <button onclick="agregarParada()">Añadir parada</button>
+  <button onclick="confirmarViaje()">Confirmar</button>
+</div>
+
+<div class="screen hidden" id="paradasScreen">
+  <h2>Paradas del viaje</h2>
+  <div id="listaParadas"></div>
+  <div class="footer-buttons">
+    <button onclick="finalizarViaje()">Finalizar viaje</button>
+    <button onclick="descargarPDF()">Descargar PDF</button>
+  </div>
+  <div id="resumen"></div>
+</div>
+
+<script>
+let viajeActivo = false;
+let paradas = [];
+let plazas = 0;
+let ocupadas = 0;
+let datosParadas = [];
+let historial = [];
+let registroPasajeros = [];
+
+let nombres = ["Juan", "Ana", "Luis", "Carlos", "Laura", "Elena", "José", "Sara", "Manuel", "Lucía"];
+let apellidos = ["García", "López", "Martínez", "Sánchez", "Pérez", "Gómez", "Fernández", "Ruiz", "Díaz", "Moreno"];
+
+function mostrarInicioViaje() {
+  if (viajeActivo) {
+    alert("Ya hay un viaje en curso.");
+    return;
+  }
+  document.getElementById('menuScreen').classList.add('hidden');
+  document.getElementById('inicioViajeScreen').classList.remove('hidden');
+  document.getElementById('paradasContainer').innerHTML = '';
+  agregarParada();
+}
+
+function agregarParada() {
+  const container = document.getElementById('paradasContainer');
+  const div = document.createElement('div');
+  div.className = 'parada-config';
+  div.innerHTML = `
+    <input placeholder="Nombre de la parada">
+    <select>
+      <option value="mixto">Mixta</option>
+      <option value="soloSube">Solo sube</option>
+      <option value="soloBaja">Solo baja</option>
+    </select>
+  `;
+  container.appendChild(div);
+}
+
+function continuarViaje() {
+  if (!viajeActivo) {
+    alert("No hay ningún viaje activo.");
+    return;
+  }
+  mostrarParadas();
+}
+
+function confirmarViaje() {
+  const numeroBus = document.getElementById('numeroBus').value;
+  plazas = parseInt(document.getElementById('plazas').value);
+  const paradaInputs = document.querySelectorAll('.parada-config');
+  if (!numeroBus || !plazas || paradaInputs.length === 0) {
+    alert("Rellena todos los campos.");
+    return;
+  }
+  paradas = Array.from(paradaInputs).map(div => {
+    const nombre = div.querySelector('input').value.trim();
+    const tipo = div.querySelector('select').value;
+    return { nombre, tipo };
+  }).filter(p => p.nombre !== "");
+
+  if (paradas.length < 2) {
+    alert("Debe haber al menos dos paradas.");
+    return;
+  }
+
+  viajeActivo = true;
+  datosParadas = [];
+  registroPasajeros = [];
+  generarDatosParadas();
+  document.getElementById('inicioViajeScreen').classList.add('hidden');
+  mostrarParadas();
+}
+
+function generarNombre() {
+  const nombre = nombres[Math.floor(Math.random() * nombres.length)];
+  const apellido = apellidos[Math.floor(Math.random() * apellidos.length)];
+  return `${nombre} ${apellido}`;
+}
+
+function generarLetras(n) {
+  const letras = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let resultado = "";
+  for (let i = 0; i < n; i++) resultado += letras.charAt(Math.floor(Math.random() * letras.length));
+  return resultado;
+}
+
+function asignarPlazaDisponible(ocupadasSet) {
+  for (let i = 1; i <= plazas; i++) {
+    if (!ocupadasSet.has(i)) {
+      return i;
+    }
+  }
+  return Math.floor(Math.random() * plazas) + 1;
+}
+
+function generarDatosParadas() {
+  ocupadas = 0;
+  const plazasOcupadas = new Set();
+  datosParadas = paradas.map((p, i) => {
+    let suben = 0, bajan = 0;
+    let pasajeros = [];
+    const nombreParada = p.nombre;
+    const tipo = p.tipo;
+
+    if (i === 0) {
+      suben = tipo !== 'soloBaja' ? Math.floor(Math.random() * (plazas * 0.4) + plazas * 0.6) : 0;
+      ocupadas += suben;
+      for (let j = 0; j < suben; j++) {
+        const nombre = generarNombre();
+        const plaza = asignarPlazaDisponible(plazasOcupadas);
+        const localizador = plaza + generarLetras(4);
+        const destino = paradas[Math.floor(i + 1 + Math.random() * (paradas.length - i - 1))].nombre;
+        const pasajero = { nombre, plaza, localizador, embarcado: false, tipo: 'sube', origen: nombreParada, destino };
+        pasajeros.push(pasajero);
+        registroPasajeros.push(pasajero);
+        plazasOcupadas.add(plaza);
+      }
+    } else if (i === paradas.length - 1) {
+      const bajanAhora = registroPasajeros.filter(pas => pas.destino === nombreParada);
+      pasajeros = bajanAhora.map(p => ({ ...p, tipo: 'baja' }));
+      bajan = pasajeros.length;
+      ocupadas -= bajan;
+      bajanAhora.forEach(p => plazasOcupadas.delete(p.plaza));
+    } else {
+      const bajanAhora = registroPasajeros.filter(pas => pas.destino === nombreParada);
+      bajan = tipo !== 'soloSube' ? bajanAhora.length : 0;
+      ocupadas -= bajan;
+      if (bajan > 0) {
+        pasajeros.push(...bajanAhora.map(p => ({ ...p, tipo: 'baja' })));
+        bajanAhora.forEach(p => plazasOcupadas.delete(p.plaza));
+      }
+      const maxSuben = plazas - ocupadas;
+      suben = tipo !== 'soloBaja' ? Math.floor(Math.random() * (maxSuben + 1)) : 0;
+      for (let j = 0; j < suben; j++) {
+        const nombre = generarNombre();
+        const plaza = asignarPlazaDisponible(plazasOcupadas);
+        const localizador = plaza + generarLetras(4);
+        const destino = paradas[Math.floor(i + 1 + Math.random() * (paradas.length - i - 1))].nombre;
+        const pasajero = { nombre, plaza, localizador, embarcado: false, tipo: 'sube', origen: nombreParada, destino };
+        pasajeros.push(pasajero);
+        registroPasajeros.push(pasajero);
+        plazasOcupadas.add(plaza);
+      }
+      ocupadas += suben;
+    }
+
+    pasajeros.sort((a, b) => a.plaza - b.plaza);
+
+    return {
+      nombre: nombreParada,
+      suben,
+      bajan,
+      ocupadasActual: ocupadas,
+      pasajeros,
+      desplegado: false
+    };
+  });
+}
+
+function mostrarParadas() {
+  document.getElementById('menuScreen').classList.add('hidden');
+  document.getElementById('paradasScreen').classList.remove('hidden');
+  const lista = document.getElementById('listaParadas');
+  lista.innerHTML = "";
+
+  datosParadas.forEach((p, i) => {
+    const contenedor = document.createElement('div');
+    const paradaDiv = document.createElement('div');
+    paradaDiv.className = 'parada';
+    paradaDiv.innerHTML = `<strong>${p.nombre}</strong><div class="small">Suben: ${p.suben} | Bajan: ${p.bajan} | Ocupadas: ${p.ocupadasActual}</div>`;
+    paradaDiv.onclick = () => {
+      p.desplegado = !p.desplegado;
+      mostrarParadas();
+    };
+    contenedor.appendChild(paradaDiv);
+
+    if (p.desplegado) {
+      const detallesDiv = document.createElement('div');
+      detallesDiv.className = 'pasajeros-container';
+      p.pasajeros.forEach((pasajero, idx) => {
+        const div = document.createElement('div');
+        div.className = 'pasajero';
+        div.innerHTML = `
+          <div class="destino">${pasajero.destino}</div>
+          <div class="datos-arriba">
+            <img src="${pasajero.tipo === 'sube' ? 'https://cdn.pixabay.com/photo/2017/05/11/12/24/green-2304008_1280.png' : 'https://w7.pngwing.com/pngs/659/157/png-transparent-arrow-computer-icons-red-arrow-angle-rectangle-triangle.png'}" class="icono">
+            <div>Plaza: ${pasajero.plaza}</div>
+            <div>${pasajero.nombre}</div>
+          </div>
+          <div class="datos-abajo">
+            <div>${pasajero.localizador}</div>
+            <button class="boton-embarcar ${pasajero.embarcado ? 'embarcado' : ''}" onclick="marcarEmbarcado(${i}, ${idx}, this)">${pasajero.embarcado ? '✔️' : '✖️'}</button>
+          </div>
+        `;
+        detallesDiv.appendChild(div);
+      });
+      contenedor.appendChild(detallesDiv);
+    }
+
+    lista.appendChild(contenedor);
+  });
+}
+
+function marcarEmbarcado(paradaIdx, pasajeroIdx, boton) {
+  const pasajero = datosParadas[paradaIdx].pasajeros[pasajeroIdx];
+  pasajero.embarcado = !pasajero.embarcado;
+  mostrarParadas();
+}
+
+function finalizarViaje() {
+  if (!viajeActivo) return;
+  historial.push(JSON.parse(JSON.stringify(datosParadas)));
+  alert("Viaje finalizado y guardado en el historial.");
+  viajeActivo = false;
+  datosParadas = [];
+  document.getElementById('paradasScreen').classList.add('hidden');
+  document.getElementById('menuScreen').classList.remove('hidden');
+}
+
+function descargarPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  let y = 10;
+  doc.setFontSize(14);
+  doc.setTextColor(0);
+  doc.text("🎫 Ticket del Viaje", 10, y);
+  y += 10;
+
+  doc.setFontSize(12);
+  doc.setTextColor(0);
+  doc.text("Recorrido:", 10, y);
+  y += 8;
+
+  paradas.forEach(p => {
+    doc.text("• " + p.nombre, 14, y);
+    y += 7;
+  });
+
+  y += 8;
+  doc.text("Pasajeros:", 10, y);
+  y += 8;
+
+  registroPasajeros.forEach(pas => {
+    const texto = `${pas.nombre} (${pas.localizador})`;
+    doc.text(texto, 14, y);
+    y += 7;
+    if (y > 280) {
+      doc.addPage();
+      y = 10;
+    }
+  });
+
+  doc.save("ticket-viaje.pdf");
+}
+</script>
+
+</body>
+</html>
